@@ -30,7 +30,7 @@ A local speech-to-text desktop app — Bold & Vivid floating pill + system tray.
 - **Close behavior**: closing `MainWindow` calls `withdraw()` — app stays alive in tray. Only tray "Quit" destroys the process.
 - **PillOverlay** is a `Toplevel` child of `MainWindow`. Uses Windows `transparentcolor` trick: window bg = `#010203`, pill drawn on Canvas with `round_rect()`.
 - **`<<PillStop>>`** virtual event fired by the pill's stop button, bound on `MainWindow` by `YerrrpApp`.
-- **Auto-paste always fires** — `pyautogui.hotkey("ctrl", "v")` runs 120ms after every successful transcription (no toggle needed).
+- **Auto-paste always fires** — `pynput.keyboard.Controller().type(text)` runs 200ms after every successful transcription. Uses Unicode `SendInput` (not Ctrl+V simulation) so it works in Electron apps, terminals, and native Win32 apps. Clipboard is also set as a manual fallback.
 - **Pill never shows transcription text** — shows waveform during recording, "Transcribing…" spinner, then "✓ Done" for 1.5s. All text goes to the main window history log only.
 
 ## Hotkey

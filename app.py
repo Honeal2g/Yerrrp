@@ -3,6 +3,7 @@
 Entry point and orchestrator. Owns all recording state and wires the four
 components (MainWindow, PillOverlay, TrayIcon, HotkeyListener) together.
 """
+import ctypes
 import os
 import threading
 
@@ -47,10 +48,11 @@ class YerrrpApp:
         from tray_icon import TrayIcon
         from hotkey_listener import HotkeyListener
 
-        self._recording    = False
-        self._audio_frames = []
-        self._stream       = None
-        self._model_cache  = {}
+        self._recording          = False
+        self._audio_frames       = []
+        self._stream             = None
+        self._model_cache        = {}
+        self._paste_target_hwnd  = 0
 
         # MainWindow IS the tk.Tk root
         self.main = MainWindow(self)
@@ -108,6 +110,10 @@ class YerrrpApp:
     def start_recording(self):
         if self._recording:
             return
+        try:
+            self._paste_target_hwnd = ctypes.windll.user32.GetForegroundWindow()
+        except Exception:
+            self._paste_target_hwnd = 0
         self._audio_frames = []
         try:
             self._stream = sd.InputStream(
@@ -207,10 +213,26 @@ class YerrrpApp:
             return raw
 
     def _auto_paste(self, text: str):
+        # Always set clipboard so the user can manually paste if auto-type fails.
         self.main.clipboard_clear()
         self.main.clipboard_append(text)
-        if _PYAUTOGUI_OK:
-            self.main.after(120, lambda: pyautogui.hotkey("ctrl", "v"))
+        top = self._paste_target_hwnd
+
+        def do_paste():
+            if top:
+                try:
+                    ctypes.windll.user32.SetForegroundWindow(top)
+                except Exception:
+                    pass
+            # Type characters directly via Unicode SendInput — works in Electron,
+            # terminals, and native apps without needing Ctrl+V routing.
+            try:
+                from pynput.keyboard import Controller
+                Controller().type(text)
+            except Exception:
+                pass
+
+        self.main.after(200, do_paste)
 
 
 if __name__ == "__main__":

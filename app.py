@@ -180,8 +180,7 @@ class YerrrpApp:
     def _on_transcribed(self, text: str):
         self.main.append_entry(text)
         self.pill.show_result(text)
-        if self.main.get_ptt():
-            self._auto_paste(text)
+        self._auto_paste(text)
 
     def _on_error(self, msg: str):
         self.pill.hide()

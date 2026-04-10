@@ -62,11 +62,11 @@ class PillOverlay(tk.Toplevel):
         self._state = "transcribing"
         self._render_transcribing()
 
-    def show_result(self, text: str):
+    def show_result(self, text: str = ""):
         self._cancel_all()
         self._state = "done"
-        self._render_done(text)
-        self._hide_job = self.after(6000, self.hide)
+        self._render_done()
+        self._hide_job = self.after(1500, self.hide)
 
     def hide(self):
         self._cancel_all()
@@ -178,33 +178,14 @@ class PillOverlay(tk.Toplevel):
     # Done state
     # ------------------------------------------------------------------
 
-    def _render_done(self, text: str):
-        display = text if len(text) <= 46 else text[:43] + "…"
-        tw = int(len(display) * 6.5)
-        copy_w = 52
-        w = max(min(tw + copy_w + 48, 520), 200)
-
+    def _render_done(self):
+        w = 140
         self._place(w)
         c = self._canvas
         c.delete("all")
         self._pill(w, BG_CARD, border=SUCCESS)
-
-        text_x = (w - copy_w - 16) // 2 + 8
-        c.create_text(text_x, PILL_HEIGHT // 2, text=display,
-                      fill=TEXT_PRIMARY, font=("Segoe UI", 9), anchor="center")
-
-        bx1, bx2 = w - copy_w - 6, w - 6
-        by1, by2 = 9, PILL_HEIGHT - 9
-        round_rect(c, bx1, by1, bx2, by2, 6,
-                   fill=ACCENT_1, outline=ACCENT_1, tags="copy_btn")
-        c.create_text((bx1 + bx2) // 2, (by1 + by2) // 2, text="Copy",
-                      fill="white", font=("Segoe UI", 8, "bold"), tags="copy_btn")
-        c.tag_bind("copy_btn", "<Button-1>", lambda _: self._do_copy(text))
-
-    def _do_copy(self, text: str):
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        self.hide()
+        c.create_text(w // 2, PILL_HEIGHT // 2, text="✓ Done",
+                      fill=SUCCESS, font=("Segoe UI", 10, "bold"))
 
     # ------------------------------------------------------------------
     # Helpers

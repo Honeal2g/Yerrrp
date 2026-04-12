@@ -5,9 +5,11 @@ from datetime import datetime
 
 from theme import (
     BG_ROOT, BG_CARD, BG_SURFACE, BG_INPUT, ACCENT_1, ACCENT_2, ACCENT_BORDER,
-    DANGER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    DANGER, SUCCESS, WARNING, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
     FONT_TITLE, FONT_BOLD, FONT_NORMAL, FONT_SMALL, FONT_LABEL,
 )
+from hotkey_listener import format_combo, _MODIFIER_KEYS, _VK_MAP
+from settings import check_conflicts
 
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large"]
 DEFAULT_MODEL  = "base"
@@ -35,6 +37,7 @@ class MainWindow(tk.Tk):
     def _build_ui(self):
         self._build_header()
         self._build_controls()
+        self._build_hotkey_bar()
         self._build_status()
         self._build_log()
 
@@ -89,6 +92,150 @@ class MainWindow(tk.Tk):
 
         self._ptt_active  = False
         self._vibe_active = False
+
+    def _build_hotkey_bar(self):
+        bar = tk.Frame(self, bg=BG_ROOT, pady=2)
+        bar.pack(fill="x", padx=14)
+
+        tk.Label(bar, text="HOTKEY", bg=BG_ROOT, fg=TEXT_MUTED,
+                 font=FONT_LABEL).pack(side="left", padx=(0, 6))
+
+        self._hotkey_label = tk.Label(
+            bar, text="", bg=BG_SURFACE, fg=TEXT_PRIMARY,
+            font=FONT_SMALL, padx=10, pady=4, relief="flat",
+        )
+        self._hotkey_label.pack(side="left", padx=(0, 6))
+
+        self._hotkey_change_btn = self._btn(bar, "Change", BG_SURFACE, self._start_hotkey_capture)
+        self._hotkey_change_btn.pack(side="left", padx=(0, 6))
+
+        self._hotkey_cancel_btn = self._btn(bar, "Cancel", BG_SURFACE, self._cancel_hotkey_capture)
+        # Hidden until capture mode
+
+        self._hotkey_warn = tk.Label(bar, text="", bg=BG_ROOT, fg=WARNING, font=FONT_LABEL)
+        self._hotkey_warn.pack(side="left", padx=(6, 0))
+
+        self._capturing_hotkey = False
+        self._captured_keys: set[str] = set()
+        self._capture_bind_id = None
+
+    def set_hotkey_display(self, combo: list[str]):
+        """Update the hotkey label to show the current combo."""
+        self._hotkey_label.config(text=format_combo(combo))
+
+    def _start_hotkey_capture(self):
+        self._capturing_hotkey = True
+        self._captured_keys = set()
+        self._hotkey_label.config(text="Press new hotkey...", fg=ACCENT_2)
+        self._hotkey_warn.config(text="")
+        self._hotkey_change_btn.pack_forget()
+        self._hotkey_cancel_btn.pack(side="left", padx=(0, 6))
+        # Bind keyboard events on the root window
+        self._capture_bind_id = self.bind_all("<KeyPress>", self._on_capture_key)
+        self.bind_all("<KeyRelease>", self._on_capture_release)
+
+    def _cancel_hotkey_capture(self):
+        self._capturing_hotkey = False
+        self._captured_keys = set()
+        if self._capture_bind_id:
+            self.unbind_all("<KeyPress>")
+            self.unbind_all("<KeyRelease>")
+            self._capture_bind_id = None
+        self._hotkey_cancel_btn.pack_forget()
+        self._hotkey_change_btn.pack(side="left", padx=(0, 6))
+        self._hotkey_label.config(fg=TEXT_PRIMARY)
+        self._hotkey_warn.config(text="")
+        # Restore current combo display
+        if hasattr(self.app, 'get_hotkey_combo'):
+            self.set_hotkey_display(self.app.get_hotkey_combo())
+
+    def _normalize_tk_key(self, event) -> str | None:
+        """Convert a tkinter key event to our canonical key name."""
+        sym = event.keysym.lower()
+        mapping = {
+            "control_l": "ctrl", "control_r": "ctrl",
+            "shift_l": "shift", "shift_r": "shift",
+            "alt_l": "alt", "alt_r": "alt",
+            "win_l": "win", "win_r": "win",
+            "super_l": "win", "super_r": "win",
+            "escape": "escape", "tab": "tab", "space": "space",
+            "delete": "delete",
+        }
+        if sym in mapping:
+            return mapping[sym]
+        # F-keys
+        if sym.startswith("f") and sym[1:].isdigit():
+            return sym
+        # Single character
+        if len(sym) == 1 and sym.isalnum():
+            return sym
+        return None
+
+    def _on_capture_key(self, event):
+        if not self._capturing_hotkey:
+            return
+        name = self._normalize_tk_key(event)
+        if name:
+            self._captured_keys.add(name)
+            self._hotkey_label.config(text=format_combo(sorted(self._captured_keys)))
+        return "break"
+
+    def _on_capture_release(self, event):
+        if not self._capturing_hotkey:
+            return
+        if not self._captured_keys:
+            return
+        # When any key is released, finalize the captured combo
+        combo = sorted(self._captured_keys, key=lambda k: (
+            0 if k == "ctrl" else 1 if k == "alt" else 2 if k == "shift" else 3 if k == "win" else 4
+        ))
+        if len(combo) < 2:
+            self._hotkey_warn.config(text="Need at least 2 keys")
+            self._captured_keys = set()
+            self._hotkey_label.config(text="Press new hotkey...")
+            return "break"
+
+        # Check for unsupported keys
+        for k in combo:
+            if k not in _VK_MAP:
+                self._hotkey_warn.config(text=f"Unsupported key: {k}")
+                self._captured_keys = set()
+                self._hotkey_label.config(text="Press new hotkey...")
+                return "break"
+
+        # Check for system conflicts
+        conflict = check_conflicts(combo)
+        if conflict:
+            self._hotkey_warn.config(text=f"Conflicts with: {conflict}")
+            resp = messagebox.askyesno(
+                "Hotkey Conflict",
+                f"The hotkey {format_combo(combo)} conflicts with "
+                f"'{conflict}'.\n\nThe system shortcut may take priority "
+                f"and Yerrrp's hotkey might not work reliably.\n\n"
+                f"Use this hotkey anyway?",
+            )
+            if not resp:
+                self._captured_keys = set()
+                self._hotkey_label.config(text="Press new hotkey...")
+                self._hotkey_warn.config(text="")
+                return "break"
+            self._hotkey_warn.config(text=f"Warning: conflicts with {conflict}")
+
+        # Accept the combo
+        self._capturing_hotkey = False
+        self.unbind_all("<KeyPress>")
+        self.unbind_all("<KeyRelease>")
+        self._capture_bind_id = None
+        self._hotkey_cancel_btn.pack_forget()
+        self._hotkey_change_btn.pack(side="left", padx=(0, 6))
+        self._hotkey_label.config(fg=TEXT_PRIMARY)
+        self.set_hotkey_display(combo)
+
+        # Notify the app to apply the new hotkey
+        if hasattr(self.app, 'change_hotkey'):
+            self.app.change_hotkey(combo)
+
+        return "break"
 
     def _build_status(self):
         self._status_var = tk.StringVar(value="Ready")

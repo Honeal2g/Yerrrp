@@ -21,9 +21,10 @@ A local speech-to-text desktop app — Bold & Vivid floating pill + system tray.
 | `main_window.py` | `MainWindow(tk.Tk)` — history log with timestamps, controls, Bold & Vivid theme |
 | `pill_overlay.py` | `PillOverlay(tk.Toplevel)` — frameless pill, recording/transcribing/done states |
 | `tray_icon.py` | `TrayIcon` — pystray daemon thread, programmatic purple mic icon |
-| `hotkey_listener.py` | `HotkeyListener` — pynput Ctrl+Win hold/release PTT |
+| `hotkey_listener.py` | `HotkeyListener` — configurable pynput hotkey with Win32 `GetAsyncKeyState` verification |
+| `settings.py` | Persistent JSON settings (`~/.yerrrp/settings.json`), system hotkey conflict registry |
 | `theme.py` | Colors, fonts, `round_rect()` canvas helper |
-| `tests/test_hotkey.py` | Unit tests for HotkeyListener key-state logic |
+| `tests/test_hotkey.py` | Unit tests for HotkeyListener, conflict detection, configurable combos |
 
 ## Architecture rules
 - **Thread safety**: all tkinter calls from background threads MUST use `root.after(0, ...)`.
@@ -34,7 +35,7 @@ A local speech-to-text desktop app — Bold & Vivid floating pill + system tray.
 - **Pill never shows transcription text** — shows waveform during recording, "Transcribing…" spinner, then "✓ Done" for 1.5s. All text goes to the main window history log only.
 
 ## Hotkey
-`Ctrl + Win` — hold to record, release to stop. Implemented via `pynput.keyboard.Listener` tracking both key states independently. Windows key maps to `Key.cmd` in pynput.
+Default `Ctrl + Win` — hold to record, release to stop. Configurable via the "Change" button in the hotkey bar. Settings persist to `~/.yerrrp/settings.json`. Implemented via `pynput.keyboard.Listener` with Win32 `GetAsyncKeyState` verification to prevent stuck-key false triggers. System hotkey conflicts (Win+L, Alt+F4, etc.) are detected and warned about during capture.
 
 ## Pill states
 `hidden` → `recording` (waveform + timer, purple border) → `transcribing` ("Transcribing…") → `done` ("✓ Done", 1.5s) → `hidden`

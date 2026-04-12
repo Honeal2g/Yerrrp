@@ -6,6 +6,7 @@ components (MainWindow, PillOverlay, TrayIcon, HotkeyListener) together.
 import ctypes
 import os
 import threading
+import settings as cfg
 
 try:
     import numpy as np
@@ -53,6 +54,7 @@ class YerrrpApp:
         self._stream             = None
         self._model_cache        = {}
         self._paste_target_hwnd  = 0
+        self._settings           = cfg.load()
 
         # MainWindow IS the tk.Tk root
         self.main = MainWindow(self)
@@ -62,10 +64,14 @@ class YerrrpApp:
             on_show=lambda: self.main.after(0, self._show_main),
             on_quit=lambda: self.main.after(0, self._quit),
         )
+
+        hotkey_combo = self._settings.get("hotkey", ["ctrl", "win"])
         self.hotkey = HotkeyListener(
+            combo=hotkey_combo,
             on_press_cb=lambda: self.main.after(0, self.start_recording),
             on_release_cb=lambda: self.main.after(0, self.stop_recording),
         )
+        self.main.set_hotkey_display(hotkey_combo)
 
         # Pill stop button fires this virtual event on the root window
         self.main.bind("<<PillStop>>", lambda _: self.stop_recording())
@@ -97,8 +103,26 @@ class YerrrpApp:
     def _quit(self):
         self.tray.stop()
         self.hotkey.stop()
+        cfg.save(self._settings)
         self.main.quit()
         self.main.destroy()
+
+    def get_hotkey_combo(self) -> list[str]:
+        return self._settings.get("hotkey", ["ctrl", "win"])
+
+    def change_hotkey(self, combo: list[str]):
+        """Stop the old listener, save the new combo, start a fresh listener."""
+        self.hotkey.stop()
+        self._settings["hotkey"] = combo
+        cfg.save(self._settings)
+        self.hotkey = HotkeyListener(
+            combo=combo,
+            on_press_cb=lambda: self.main.after(0, self.start_recording),
+            on_release_cb=lambda: self.main.after(0, self.stop_recording),
+        )
+        self.hotkey.start()
+        from hotkey_listener import format_combo
+        self.main.set_status(f"Hotkey changed to {format_combo(combo)}")
 
     # ------------------------------------------------------------------
     # Recording state
